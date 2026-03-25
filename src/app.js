@@ -19,11 +19,32 @@ const { handleIssue, handleIssueStatus } = require('./igm/igmHandler');
 const app = express();
 const PORT = process.env.PORT || 3000;
 
+const debugStore = { lastContext: null, lastCallbackResult: null };
+
 app.use(cors());
 app.use(morgan('combined'));
 app.use(bodyParser.json({ limit: '5mb' }));
 
 initFirebase();
+
+// ────────────────────────────────────────────────
+// Debug endpoints (temporary — remove after Pramaan passes)
+// ────────────────────────────────────────────────
+app.get('/debug/last-context', (req, res) => {
+  res.json(debugStore.lastContext || { message: 'No search received yet' });
+});
+
+app.post('/debug/test-callback', async (req, res) => {
+  const { url } = req.body;
+  if (!url) return res.status(400).json({ error: 'url required' });
+  const axios = require('axios');
+  try {
+    const result = await axios.post(url, { test: 'ping', ts: Date.now() }, { timeout: 8000 });
+    res.json({ status: result.status, data: result.data });
+  } catch (err) {
+    res.json({ error: err.message, status: err.response?.status });
+  }
+});
 
 // ────────────────────────────────────────────────
 // Health check (public)
@@ -51,7 +72,10 @@ app.post('/ondc/on_subscribe', handleOnSubscribe);
 // Beckn Protocol Endpoints
 // All incoming calls from Buyer Apps via ONDC Gateway
 // ────────────────────────────────────────────────
-app.post('/ondc/search',        handleSearch);
+app.post('/ondc/search', (req, res, next) => {
+  debugStore.lastContext = req.body?.context || null;
+  next();
+}, handleSearch);
 app.post('/ondc/select',        handleSelect);
 app.post('/ondc/init',          handleInit);
 app.post('/ondc/confirm',       handleConfirm);
