@@ -17,6 +17,7 @@ const { handleUpdate } = require('./protocol/update');
 const { handleIssue, handleIssueStatus } = require('./igm/igmHandler');
 const { handleTrack } = require('./protocol/track');
 const { handleRating } = require('./protocol/rating');
+const { handleSupport } = require('./protocol/support');
 const { getLastCallbackResult } = require('./utils/beckn');
 
 const app = express();
@@ -130,13 +131,14 @@ registerOndcRoute('cancel', handleCancel);
 registerOndcRoute('update', handleUpdate);
 registerOndcRoute('track', handleTrack);
 registerOndcRoute('rating', handleRating);
+registerOndcRoute('support', handleSupport);
 
 // ────────────────────────────────────────────────
 // IGM — Issue & Grievance Management
 // Mandatory for ONDC compliance
 // ────────────────────────────────────────────────
-app.post('/ondc/issue',         handleIssue);
-app.post('/ondc/issue_status',  handleIssueStatus);
+registerOndcRoute('issue', handleIssue);
+registerOndcRoute('issue_status', handleIssueStatus);
 
 // ────────────────────────────────────────────────
 // Internal API — FLYP dashboard calls to update order status

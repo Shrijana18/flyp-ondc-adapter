@@ -2,6 +2,12 @@ const { getDb } = require('../firebase/admin');
 const { buildContext, ackResponse, sendCallback } = require('../utils/beckn');
 const admin = require('firebase-admin');
 
+function shouldSendProactiveUpdate(context) {
+  const enabled = String(process.env.ENABLE_PROACTIVE_ON_UPDATE || 'true').toLowerCase() !== 'false';
+  if (!enabled) return false;
+  return String(context?.bap_id || '').includes('pramaan.ondc.org');
+}
+
 async function findProductWithRef(db, providerId, itemId) {
   const collections = ['marketplaceStores', 'stores'];
 
@@ -199,6 +205,62 @@ async function handleConfirm(req, res) {
     };
 
     await sendCallback(context.bap_uri, 'on_confirm', responseContext, responseMessage);
+
+    if (shouldSendProactiveUpdate(context)) {
+      setTimeout(async () => {
+        try {
+          const updateContext = buildContext({
+            action: 'on_update',
+            domain: context.domain,
+            transactionId: context.transaction_id,
+            messageId: context.message_id,
+            city: context.city,
+            country: context.country,
+            version: context.core_version,
+          });
+          updateContext.bap_id = context.bap_id;
+          updateContext.bap_uri = context.bap_uri;
+
+          const updateMessage = {
+            order: {
+              id: ondcOrderId,
+              state: 'Accepted',
+              provider: { id: providerId, locations: [{ id: 'l1' }] },
+              items: orderItems.map(i => ({ id: i.productId, quantity: { count: i.quantity }, fulfillment_id: 'f1' })),
+              fulfillments: [
+                {
+                  id: 'f1',
+                  type: 'Delivery',
+                  state: { descriptor: { code: 'Accepted', short_desc: 'Order updated by seller' } },
+                  tracking: false,
+                },
+              ],
+              quote: {
+                price: { currency: 'INR', value: String(orderTotal) },
+                breakup: orderItems.map(i => ({
+                  '@ondc/org/item_id': i.productId,
+                  '@ondc/org/item_quantity': { count: i.quantity },
+                  title: i.name,
+                  '@ondc/org/title_type': 'item',
+                  price: { currency: 'INR', value: String(i.total) },
+                })),
+                ttl: 'PT15M',
+              },
+              payment: {
+                ...payment,
+                status: 'NOT-PAID',
+                type: 'POST-FULFILLMENT',
+              },
+              updated_at: new Date().toISOString(),
+            },
+          };
+
+          await sendCallback(context.bap_uri, 'on_update', updateContext, updateMessage);
+        } catch (updateErr) {
+          console.error('[confirm] Proactive on_update failed:', updateErr.message);
+        }
+      }, 500);
+    }
   } catch (err) {
     console.error('[confirm] Error:', err.message);
   }
