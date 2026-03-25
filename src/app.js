@@ -18,6 +18,7 @@ const { handleIssue, handleIssueStatus } = require('./igm/igmHandler');
 const { handleTrack } = require('./protocol/track');
 const { handleRating } = require('./protocol/rating');
 const { handleSupport } = require('./protocol/support');
+const { handleRecon } = require('./protocol/recon');
 const { getLastCallbackResult } = require('./utils/beckn');
 
 const app = express();
@@ -132,6 +133,7 @@ registerOndcRoute('update', handleUpdate);
 registerOndcRoute('track', handleTrack);
 registerOndcRoute('rating', handleRating);
 registerOndcRoute('support', handleSupport);
+registerOndcRoute('recon', handleRecon);
 
 // ────────────────────────────────────────────────
 // IGM — Issue & Grievance Management

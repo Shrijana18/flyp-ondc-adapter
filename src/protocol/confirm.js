@@ -14,6 +14,62 @@ function shouldSendProactiveCancel(context) {
   return String(context?.bap_id || '').includes('pramaan.ondc.org');
 }
 
+function shouldSendProactiveStatus(context) {
+  const enabled = String(process.env.ENABLE_PROACTIVE_ON_STATUS || 'true').toLowerCase() !== 'false';
+  if (!enabled) return false;
+  return String(context?.bap_id || '').includes('pramaan.ondc.org');
+}
+
+async function sendProactiveStatus({ context, ondcOrderId, providerId, orderItems, orderTotal, payment, statusCode, statusShortDesc, orderState }) {
+  const statusContext = buildContext({
+    action: 'on_status',
+    domain: context.domain,
+    transactionId: context.transaction_id,
+    messageId: context.message_id,
+    city: context.city,
+    country: context.country,
+    version: context.core_version,
+  });
+  statusContext.bap_id = context.bap_id;
+  statusContext.bap_uri = context.bap_uri;
+
+  const statusMessage = {
+    order: {
+      id: ondcOrderId,
+      state: orderState,
+      provider: { id: providerId, locations: [{ id: 'l1' }] },
+      items: orderItems.map(i => ({ id: i.productId, quantity: { count: i.quantity }, fulfillment_id: 'f1' })),
+      fulfillments: [
+        {
+          id: 'f1',
+          type: 'Delivery',
+          state: { descriptor: { code: statusCode, short_desc: statusShortDesc } },
+          tracking: false,
+        },
+      ],
+      quote: {
+        price: { currency: 'INR', value: String(orderTotal) },
+        breakup: orderItems.map(i => ({
+          '@ondc/org/item_id': i.productId,
+          '@ondc/org/item_quantity': { count: i.quantity },
+          title: i.name,
+          '@ondc/org/title_type': 'item',
+          price: { currency: 'INR', value: String(i.total) },
+        })),
+        ttl: 'PT15M',
+      },
+      payment: {
+        ...payment,
+        status: 'NOT-PAID',
+        type: 'POST-FULFILLMENT',
+      },
+      updated_at: new Date().toISOString(),
+    },
+  };
+
+  await sendCallback(context.bap_uri, 'on_status', statusContext, statusMessage);
+}
+
 async function findProductWithRef(db, providerId, itemId) {
   const collections = ['marketplaceStores', 'stores'];
 
@@ -262,6 +318,20 @@ async function handleConfirm(req, res) {
           };
 
           await sendCallback(context.bap_uri, 'on_update', updateContext, updateMessage);
+
+          if (shouldSendProactiveStatus(context)) {
+            await sendProactiveStatus({
+              context,
+              ondcOrderId,
+              providerId,
+              orderItems,
+              orderTotal,
+              payment,
+              statusCode: 'Accepted',
+              statusShortDesc: 'Order updated by seller',
+              orderState: 'Accepted',
+            });
+          }
         } catch (updateErr) {
           console.error('[confirm] Proactive on_update failed:', updateErr.message);
         }
@@ -322,6 +392,20 @@ async function handleConfirm(req, res) {
           };
 
           await sendCallback(context.bap_uri, 'on_cancel', cancelContext, cancelMessage);
+
+          if (shouldSendProactiveStatus(context)) {
+            await sendProactiveStatus({
+              context,
+              ondcOrderId,
+              providerId,
+              orderItems,
+              orderTotal,
+              payment,
+              statusCode: 'Cancelled',
+              statusShortDesc: 'Order cancelled by seller',
+              orderState: 'Cancelled',
+            });
+          }
         } catch (cancelErr) {
           console.error('[confirm] Proactive on_cancel failed:', cancelErr.message);
         }
