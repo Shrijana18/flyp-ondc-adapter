@@ -22,7 +22,7 @@ const { getLastCallbackResult } = require('./utils/beckn');
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-const debugStore = { lastContext: null, lastCallbackResult: null, lastRequest: null };
+const debugStore = { lastContext: null, lastCallbackResult: null, lastRequest: null, lastProtocolRequest: null };
 
 app.use(cors());
 app.use(morgan('combined'));
@@ -36,6 +36,15 @@ app.use((req, res, next) => {
     hasContext: !!req.body?.context,
     action: req.body?.context?.action,
   };
+
+  if (req.body?.context && !req.path.startsWith('/debug')) {
+    debugStore.lastProtocolRequest = {
+      method: req.method,
+      path: req.path,
+      at: new Date().toISOString(),
+      context: req.body.context,
+    };
+  }
   next();
 });
 
@@ -54,6 +63,10 @@ app.get('/debug/last-callback', (req, res) => {
 
 app.get('/debug/last-request', (req, res) => {
   res.json(debugStore.lastRequest || { message: 'No request received yet' });
+});
+
+app.get('/debug/last-protocol-request', (req, res) => {
+  res.json(debugStore.lastProtocolRequest || { message: 'No protocol request received yet' });
 });
 
 app.post('/debug/test-callback', async (req, res) => {

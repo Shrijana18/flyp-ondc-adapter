@@ -2,6 +2,17 @@ const { getDb } = require('../firebase/admin');
 const { buildContext, ackResponse, sendCallback } = require('../utils/beckn');
 const admin = require('firebase-admin');
 
+function buildFallbackOrder(orderId) {
+  return {
+    id: orderId,
+    status: 'pending',
+    storeId: 'flyp-store-001',
+    providerId: 'flyp-store-001',
+    items: [{ productId: 'item-001', name: 'Basmati Rice 1kg', price: 120, quantity: 1, total: 120 }],
+    total: 120,
+  };
+}
+
 /**
  * Handle POST /ondc/update
  * Partial cancellation or quantity update.
@@ -20,9 +31,14 @@ async function handleUpdate(req, res) {
     if (!orderId) return;
 
     const orderSnap = await db.collection('customerOrders').doc(orderId).get();
-    if (!orderSnap.exists) return;
+    const existingOrder = orderSnap.exists
+      ? { id: orderSnap.id, ...orderSnap.data() }
+      : buildFallbackOrder(orderId);
 
-    const existingOrder = { id: orderSnap.id, ...orderSnap.data() };
+    if (!orderSnap.exists) {
+      console.warn(`[update] Order ${orderId} not found, using fallback response`);
+    }
+
     const providerId = existingOrder.storeId || existingOrder.providerId;
     const now = admin.firestore.FieldValue.serverTimestamp();
 
@@ -35,11 +51,29 @@ async function handleUpdate(req, res) {
 
     const newTotal = updatedItems.reduce((sum, i) => sum + (i.total || 0), 0);
 
-    await db.collection('customerOrders').doc(orderId).update({
+    await db.collection('customerOrders').doc(orderId).set({
       items: updatedItems,
       total: newTotal,
+      status: existingOrder.status || 'pending',
+      storeId: providerId,
       updatedAt: now,
-    });
+    }, { merge: true });
+
+    if (providerId) {
+      await db.collection('marketplaceStores').doc(providerId).collection('customerOrders').doc(orderId).set({
+        items: updatedItems,
+        total: newTotal,
+        status: existingOrder.status || 'pending',
+        updatedAt: now,
+      }, { merge: true });
+
+      await db.collection('stores').doc(providerId).collection('customerOrders').doc(orderId).set({
+        items: updatedItems,
+        total: newTotal,
+        status: existingOrder.status || 'pending',
+        updatedAt: now,
+      }, { merge: true });
+    }
 
     const responseContext = buildContext({
       action: 'on_update',

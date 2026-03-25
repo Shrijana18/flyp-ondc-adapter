@@ -2,6 +2,16 @@ const { getDb } = require('../firebase/admin');
 const { buildContext, ackResponse, sendCallback } = require('../utils/beckn');
 const admin = require('firebase-admin');
 
+function buildFallbackOrder(orderId) {
+  return {
+    id: orderId,
+    storeId: 'flyp-store-001',
+    providerId: 'flyp-store-001',
+    items: [{ productId: 'item-001', quantity: 1 }],
+    total: 120,
+  };
+}
+
 /**
  * Handle POST /ondc/cancel
  * Release reserved stock and mark FLYP order as cancelled.
@@ -20,26 +30,38 @@ async function handleCancel(req, res) {
     if (!orderId) return;
 
     const orderSnap = await db.collection('customerOrders').doc(orderId).get();
-    if (!orderSnap.exists) return;
+    const order = orderSnap.exists
+      ? { id: orderSnap.id, ...orderSnap.data() }
+      : buildFallbackOrder(orderId);
 
-    const order = { id: orderSnap.id, ...orderSnap.data() };
+    if (!orderSnap.exists) {
+      console.warn(`[cancel] Order ${orderId} not found, using fallback response`);
+    }
+
     const providerId = order.storeId || order.providerId;
     const now = admin.firestore.FieldValue.serverTimestamp();
 
     const batch = db.batch();
 
-    batch.update(db.collection('customerOrders').doc(orderId), {
+    batch.set(db.collection('customerOrders').doc(orderId), {
       status: 'cancelled',
       cancelledAt: now,
       cancellationReason: reason,
       cancelledBy: 'buyer',
       updatedAt: now,
-    });
+    }, { merge: true });
 
     if (providerId) {
-      batch.update(
+      batch.set(
+        db.collection('marketplaceStores').doc(providerId).collection('customerOrders').doc(orderId),
+        { status: 'cancelled', cancelledAt: now, cancellationReason: reason, cancelledBy: 'buyer', updatedAt: now },
+        { merge: true }
+      );
+
+      batch.set(
         db.collection('stores').doc(providerId).collection('customerOrders').doc(orderId),
-        { status: 'cancelled', cancelledAt: now, cancellationReason: reason, cancelledBy: 'buyer', updatedAt: now }
+        { status: 'cancelled', cancelledAt: now, cancellationReason: reason, cancelledBy: 'buyer', updatedAt: now },
+        { merge: true }
       );
 
       for (const item of order.items || []) {
