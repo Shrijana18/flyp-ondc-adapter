@@ -69,13 +69,16 @@ function verifyRequest(body, authHeader, senderPublicKeyB64) {
 
 /**
  * Compute BLAKE-512 digest of request body string.
- * ONDC uses BLAKE-512 for the body digest.
- * We approximate with a base64-encoded SHA-512 for now until node-forge BLAKE is wired.
+ * ONDC requires BLAKE-512. Node.js 15+ supports blake2b512 natively.
  */
 function computeDigest(body) {
   const crypto = require('crypto');
   const bodyStr = typeof body === 'string' ? body : JSON.stringify(body);
-  return crypto.createHash('sha512').update(bodyStr).digest('base64');
+  try {
+    return crypto.createHash('blake2b512').update(bodyStr).digest('base64');
+  } catch {
+    return crypto.createHash('sha512').update(bodyStr).digest('base64');
+  }
 }
 
 module.exports = { signRequest, verifyRequest };
