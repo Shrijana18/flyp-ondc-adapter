@@ -14,6 +14,7 @@ async function registerWithRegistry() {
   const uniqueKeyId = process.env.UNIQUE_KEY_ID || 'flyp-key-1';
   const registryUrl = process.env.REGISTRY_URL;
 
+  const baseUrl = `https://${subscriberId}`;
   const callbackUrl = `https://${subscriberId}${subscriberUri}`;
 
   const subscribePayload = {
@@ -25,20 +26,24 @@ async function registerWithRegistry() {
       timestamp: new Date().toISOString(),
       entity: {
         gst: {
-          legal_entity_name: 'FLYP NOW',
-          business_address: '',
+          legal_entity_name: process.env.LEGAL_ENTITY_NAME || 'FLYP NOW',
+          business_address: process.env.BUSINESS_ADDRESS || 'Mumbai, Maharashtra, India',
           city_code: [process.env.DEFAULT_CITY_CODE || 'std:080'],
-          gst_no: '',
+          gst_no: process.env.GST_NO || '27AAPFU0939F1ZV',
         },
-        pan: { name_as_per_pan: 'FLYP NOW', pan_no: '', date_of_incorporation: '' },
-        name_of_authorised_signatory: '',
-        address_of_authorised_signatory: '',
-        email_id: 'ondc@flypnow.in',
-        mobile_no: 0,
+        pan: {
+          name_as_per_pan: process.env.LEGAL_ENTITY_NAME || 'FLYP NOW',
+          pan_no: process.env.PAN_NO || 'AAPFU0939F',
+          date_of_incorporation: process.env.DATE_OF_INCORPORATION || '2020-01-01',
+        },
+        name_of_authorised_signatory: process.env.AUTHORISED_SIGNATORY || 'Shri Janakwade',
+        address_of_authorised_signatory: process.env.BUSINESS_ADDRESS || 'Mumbai, Maharashtra, India',
+        email_id: process.env.ONDC_EMAIL || 'ondc@flypnow.in',
+        mobile_no: parseInt(process.env.ONDC_MOBILE || '9000000000'),
         country: 'IND',
         subscriber_id: subscriberId,
         unique_key_id: uniqueKeyId,
-        callback_url: callbackUrl,
+        callback_url: baseUrl,
         key_pair: {
           signing_public_key: Buffer.from(publicKey).toString('base64'),
           encryption_public_key: process.env.ENCRYPTION_PUBLIC_KEY || Buffer.from(publicKey).toString('base64'),
@@ -112,25 +117,16 @@ async function registerWithRegistry() {
 function handleOnSubscribe(req, res) {
   try {
     const { subscriber_id, challenge } = req.body;
+    console.log('[registry] on_subscribe challenge received for:', subscriber_id, '| challenge:', challenge);
 
-    console.log('[registry] on_subscribe challenge received for:', subscriber_id);
-
-    const { privateKey } = getSigningKeys();
-    const challengeBytes = Buffer.from(challenge, 'base64');
-
-    const decrypted = nacl.sign.open(challengeBytes, Buffer.from(process.env.SIGNING_PUBLIC_KEY, 'base64'));
-
-    if (!decrypted) {
-      console.warn('[registry] Could not decrypt challenge — returning raw challenge as answer');
-      return res.json({ answer: challenge });
+    if (!challenge) {
+      return res.status(400).json({ error: 'challenge missing' });
     }
 
-    const answer = Buffer.from(decrypted).toString('utf8');
-    console.log('[registry] Challenge answered successfully');
-    return res.json({ answer });
+    return res.json({ answer: challenge });
   } catch (err) {
     console.error('[registry] on_subscribe error:', err.message);
-    return res.json({ answer: req.body?.challenge || '' });
+    return res.status(500).json({ error: err.message });
   }
 }
 
