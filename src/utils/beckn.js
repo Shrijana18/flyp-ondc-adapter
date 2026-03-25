@@ -51,19 +51,25 @@ async function sendCallback(bapUri, action, context, message) {
 
   const payload = { context: { ...context, action }, message };
   const body = JSON.stringify(payload);
-  const authHeader = signRequest(body);
+
+  let authHeader;
+  try {
+    authHeader = signRequest(body);
+  } catch (signErr) {
+    console.error(`[beckn] Signing failed for ${action}:`, signErr.message);
+  }
+
+  const headers = { 'Content-Type': 'application/json' };
+  if (authHeader) headers.Authorization = authHeader;
 
   try {
     const res = await axios.post(`${bapUri}/${action}`, payload, {
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: authHeader,
-      },
-      timeout: 10000,
+      headers,
+      timeout: 15000,
     });
-    console.log(`[beckn] Callback ${action} → ${bapUri} : ${res.status}`);
+    console.log(`[beckn] Callback ${action} → ${bapUri}/${action} : ${res.status}`);
   } catch (err) {
-    console.error(`[beckn] Callback ${action} failed:`, err.message);
+    console.error(`[beckn] Callback ${action} → ${bapUri}/${action} failed:`, err.response?.status, err.message);
   }
 }
 
