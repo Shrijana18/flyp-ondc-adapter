@@ -22,11 +22,22 @@ const { getLastCallbackResult } = require('./utils/beckn');
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-const debugStore = { lastContext: null, lastCallbackResult: null };
+const debugStore = { lastContext: null, lastCallbackResult: null, lastRequest: null };
 
 app.use(cors());
 app.use(morgan('combined'));
 app.use(bodyParser.json({ limit: '5mb' }));
+
+app.use((req, res, next) => {
+  debugStore.lastRequest = {
+    method: req.method,
+    path: req.path,
+    at: new Date().toISOString(),
+    hasContext: !!req.body?.context,
+    action: req.body?.context?.action,
+  };
+  next();
+});
 
 initFirebase();
 
@@ -39,6 +50,10 @@ app.get('/debug/last-context', (req, res) => {
 
 app.get('/debug/last-callback', (req, res) => {
   res.json(getLastCallbackResult() || { message: 'No callback attempted yet' });
+});
+
+app.get('/debug/last-request', (req, res) => {
+  res.json(debugStore.lastRequest || { message: 'No request received yet' });
 });
 
 app.post('/debug/test-callback', async (req, res) => {
@@ -79,18 +94,29 @@ app.post('/ondc/on_subscribe', handleOnSubscribe);
 // Beckn Protocol Endpoints
 // All incoming calls from Buyer Apps via ONDC Gateway
 // ────────────────────────────────────────────────
-app.post('/ondc/search', (req, res, next) => {
-  debugStore.lastContext = req.body?.context || null;
-  next();
-}, handleSearch);
-app.post('/ondc/select',        handleSelect);
-app.post('/ondc/init',          handleInit);
-app.post('/ondc/confirm',       handleConfirm);
-app.post('/ondc/status',        handleStatus);
-app.post('/ondc/cancel',        handleCancel);
-app.post('/ondc/update',        handleUpdate);
-app.post('/ondc/track',         handleTrack);
-app.post('/ondc/rating',        handleRating);
+function registerOndcRoute(path, handler, options = {}) {
+  const { captureSearchContext = false } = options;
+
+  const routeHandler = captureSearchContext
+    ? [(req, res, next) => {
+      debugStore.lastContext = req.body?.context || null;
+      next();
+    }, handler]
+    : [handler];
+
+  app.post(`/ondc/${path}`, ...routeHandler);
+  app.post(`/${path}`, ...routeHandler);
+}
+
+registerOndcRoute('search', handleSearch, { captureSearchContext: true });
+registerOndcRoute('select', handleSelect);
+registerOndcRoute('init', handleInit);
+registerOndcRoute('confirm', handleConfirm);
+registerOndcRoute('status', handleStatus);
+registerOndcRoute('cancel', handleCancel);
+registerOndcRoute('update', handleUpdate);
+registerOndcRoute('track', handleTrack);
+registerOndcRoute('rating', handleRating);
 
 // ────────────────────────────────────────────────
 // IGM — Issue & Grievance Management
