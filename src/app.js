@@ -15,6 +15,8 @@ const { handleStatus } = require('./protocol/status');
 const { handleCancel } = require('./protocol/cancel');
 const { handleUpdate } = require('./protocol/update');
 const { handleIssue, handleIssueStatus } = require('./igm/igmHandler');
+const { handleTrack } = require('./protocol/track');
+const { handleRating } = require('./protocol/rating');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -82,6 +84,8 @@ app.post('/ondc/confirm',       handleConfirm);
 app.post('/ondc/status',        handleStatus);
 app.post('/ondc/cancel',        handleCancel);
 app.post('/ondc/update',        handleUpdate);
+app.post('/ondc/track',         handleTrack);
+app.post('/ondc/rating',        handleRating);
 
 // ────────────────────────────────────────────────
 // IGM — Issue & Grievance Management
