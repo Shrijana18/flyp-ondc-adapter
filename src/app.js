@@ -17,6 +17,7 @@ const { handleUpdate } = require('./protocol/update');
 const { handleIssue, handleIssueStatus } = require('./igm/igmHandler');
 const { handleTrack } = require('./protocol/track');
 const { handleRating } = require('./protocol/rating');
+const { getLastCallbackResult } = require('./utils/beckn');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -34,6 +35,10 @@ initFirebase();
 // ────────────────────────────────────────────────
 app.get('/debug/last-context', (req, res) => {
   res.json(debugStore.lastContext || { message: 'No search received yet' });
+});
+
+app.get('/debug/last-callback', (req, res) => {
+  res.json(getLastCallbackResult() || { message: 'No callback attempted yet' });
 });
 
 app.post('/debug/test-callback', async (req, res) => {

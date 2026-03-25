@@ -3,6 +3,8 @@ const { v4: uuidv4 } = require('uuid');
 const SUBSCRIBER_ID = () => process.env.SUBSCRIBER_ID || 'ondc.flypnow.in';
 const SUBSCRIBER_URI = () => process.env.SUBSCRIBER_URI || '/ondc';
 
+let lastCallbackResult = null;
+
 /**
  * Build a standard Beckn context object for responses
  */
@@ -61,16 +63,39 @@ async function sendCallback(bapUri, action, context, message) {
 
   const headers = { 'Content-Type': 'application/json' };
   if (authHeader) headers.Authorization = authHeader;
+  const targetUrl = `${bapUri}/${action}`;
+
+  lastCallbackResult = {
+    action,
+    targetUrl,
+    at: new Date().toISOString(),
+    status: 'attempted',
+  };
 
   try {
-    const res = await axios.post(`${bapUri}/${action}`, payload, {
+    const res = await axios.post(targetUrl, payload, {
       headers,
       timeout: 15000,
     });
-    console.log(`[beckn] Callback ${action} → ${bapUri}/${action} : ${res.status}`);
+    lastCallbackResult = {
+      ...lastCallbackResult,
+      status: 'success',
+      httpStatus: res.status,
+    };
+    console.log(`[beckn] Callback ${action} → ${targetUrl} : ${res.status}`);
   } catch (err) {
-    console.error(`[beckn] Callback ${action} → ${bapUri}/${action} failed:`, err.response?.status, err.message);
+    lastCallbackResult = {
+      ...lastCallbackResult,
+      status: 'failed',
+      httpStatus: err.response?.status,
+      error: err.message,
+    };
+    console.error(`[beckn] Callback ${action} → ${targetUrl} failed:`, err.response?.status, err.message);
   }
 }
 
-module.exports = { buildContext, ackResponse, nackResponse, sendCallback };
+function getLastCallbackResult() {
+  return lastCallbackResult;
+}
+
+module.exports = { buildContext, ackResponse, nackResponse, sendCallback, getLastCallbackResult };
